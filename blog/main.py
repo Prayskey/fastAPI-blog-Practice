@@ -1,15 +1,15 @@
+# fastApi tags are use to spilt the project end points  into sections in the api docs
+
 from typing import List
 from fastapi import FastAPI, Depends, status, Response, HTTPException
 from . import schemas, models
 from .database import engine, SessionLocal
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+from .hashing import Hash
 
 app = FastAPI()
 
 models.Base.metadata.create_all(engine)
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def get_db():
@@ -20,29 +20,29 @@ def get_db():
         db.close()
 
 
-@app.get("/")
-def index():
-    return {"message": "Hello World"}
-
-
-@app.post("/blog", status_code=status.HTTP_201_CREATED)
+@app.post("/blog", status_code=status.HTTP_201_CREATED, tags=["blog"])
 def create_blog(
     request: schemas.Blog, db: Session = Depends(get_db)
 ):  # Create a new Blog entry in the database using the data from the request
-    new_blog = models.Blog(title=request.title, content=request.content)
+    new_blog = models.Blog(title=request.title, content=request.content, user_id=1)
     db.add(new_blog)
     db.commit()
     db.refresh(new_blog)
     return new_blog
 
 
-@app.get("/blog", response_model=List[schemas.ShowBlog])
+@app.get("/blog", response_model=List[schemas.ShowBlog], tags=["blog"])
 def all_blogs(db: Session = Depends(get_db)):
     blogs = db.query(models.Blog).all()  # Query the database for all Blog entries
     return blogs
 
 
-@app.get("/blog/{id}", status_code=status.HTTP_200_OK, response_model=schemas.ShowBlog)
+@app.get(
+    "/blog/{id}",
+    status_code=status.HTTP_200_OK,
+    response_model=schemas.ShowBlog,
+    tags=["blog"],
+)
 def show(id: int, response: Response, db: Session = Depends(get_db)):
     blog = (
         db.query(models.Blog).filter(models.Blog.id == id).first()
@@ -60,7 +60,7 @@ def show(id: int, response: Response, db: Session = Depends(get_db)):
     return blog
 
 
-@app.delete("/blog/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/blog/{id}", status_code=status.HTTP_204_NO_CONTENT, tags=["blog"])
 def destroy(id: int, db: Session = Depends(get_db)):
     # Deletes the post with corresponding ID
     blog = (
@@ -78,7 +78,7 @@ def destroy(id: int, db: Session = Depends(get_db)):
     return {"response": f"Blog with id {id} successfully deleted."}
 
 
-@app.put("/blog/{id}", status_code=status.HTTP_202_ACCEPTED)
+@app.put("/blog/{id}", status_code=status.HTTP_202_ACCEPTED, tags=["blog"])
 def update(id: int, request: schemas.Blog, db: Session = Depends(get_db)):
     # Update the post with corresponding ID
     blog = db.query(models.Blog).filter(models.Blog.id == id)
@@ -92,11 +92,10 @@ def update(id: int, request: schemas.Blog, db: Session = Depends(get_db)):
     return {"response": f"Blog with id {id} successfully updated."}
 
 
-@app.post("/user")
+@app.post("/user", response_model=schemas.ShowUser, tags=["user"])
 def create_user(request: schemas.User, db: Session = Depends(get_db)):
-    hashed_password = pwd_context.hash(request.password)
     new_user = models.User(
-        name=request.name, email=request.email, password=hashed_password
+        name=request.name, email=request.email, password=Hash.bcrypt(request.password)
     )
     db.add(new_user)
     db.commit()
@@ -104,3 +103,14 @@ def create_user(request: schemas.User, db: Session = Depends(get_db)):
         new_user
     )  # Refresh the instance to get the updated data from the database, including the generated id.
     return new_user
+
+
+@app.get("/user/{id}", response_model=schemas.ShowUser, tags=["user"])
+def getUser(id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with the id {id} is not available",
+        )
+    return user
